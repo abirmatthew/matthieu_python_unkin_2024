@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ECG Real-Time Analysis</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            padding: 0;
+            text-align: center;
+        }
+        canvas {
+            display: block;
+            margin: 20px auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Analyse en temps réel de l'ECG</h1>
+    <canvas id="ecgChart" width="800" height="400"></canvas>
+    <p id="status" style="color: green;"></p>
+    <script>
+        const ctx = document.getElementById('ecgChart').getContext('2d');
+        const ecgChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [], // Timestamps ou indices
+                datasets: [{
+                    label: 'ECG Signal',
+                    data: [],
+                    borderWidth: 1,
+                    borderColor: 'blue',
+                    fill: false,
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    x: { title: { display: true, text: 'Temps (ms ou indice)' } },
+                    y: { title: { display: true, text: 'Amplitude' } },
+                }
+            }
+        });
+
+        let currentIndex = 0;
+        const statusElement = document.getElementById('status');
+
+        /**
+         * Récupère les données ECG en temps réel depuis l'API.
+         */
+        async function fetchData() {
+            try {
+                statusElement.textContent = "Récupération des données...";
+                const response = await fetch(`/stream_data?start=${currentIndex}`);
+                const data = await response.json();
+
+                if (response.ok && data.data.length > 0) {
+                    // Mise à jour du graphique
+                    ecgChart.data.labels.push(...Array.from({ length: data.data.length }, (_, i) => currentIndex + i));
+                    ecgChart.data.datasets[0].data.push(...data.data);
+                    ecgChart.update();
+
+                    currentIndex += data.data.length;
+
+                    // Analyse des données reçues
+                    await analyzeData(data.data);
+
+                    // Continuer le flux si l'API indique que ce n'est pas la fin
+                    if (!data.end) {
+                        setTimeout(fetchData, 1000);
+                    } else {
+                        statusElement.textContent = "Fin du flux de données.";
+                    }
+                } else if (data.end) {
+                    statusElement.textContent = "Fin du flux de données.";
+                } else {
+                    statusElement.textContent = "Aucune donnée reçue. Nouvelle tentative...";
+                    setTimeout(fetchData, 1000);
+                }
+            } catch (error) {
+                console.error('Erreur lors de la récupération des données :', error);
+                statusElement.textContent = "Erreur lors de la récupération des données. Nouvelle tentative...";
+                setTimeout(fetchData, 2000);
+            }
+        }
+
+        /**
+         * Envoie un segment de signal pour analyse à l'API d'analyse.
+         * @param {Array} signal - Segment de signal à analyser.
+         */
+        async function analyzeData(signal) {
+            try {
+                statusElement.textContent = "Analyse des données...";
+                const response = await fetch('/analyze/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ signal }),
+                });
+                const result = await response.json();
+
+                if (response.ok) {
+                    console.log('Pics détectés :', result.r_peaks);
+
+                    // Optionnel : visualiser les pics détectés sur le graphique
+                    for (let peak of result.r_peaks) {
+                        ecgChart.data.datasets[0].data[peak] = ecgChart.data.datasets[0].data[peak] + 0.5; // Marquer les pics
+                    }
+                    ecgChart.update();
+                    statusElement.textContent = "Données analysées. Pics détectés.";
+                } else {
+                    console.warn('Analyse échouée:', result);
+                }
+            } catch (error) {
+                console.error('Erreur lors de l\'analyse des données :', error);
+            }
+        }
+
+        // Lancer le flux de récupération des données
+        fetchData();
+    </script>
+</body>
+</html>
