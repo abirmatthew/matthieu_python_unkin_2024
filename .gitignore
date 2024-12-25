@@ -1,0 +1,4 @@
+*.pyc
+tp_python_django/app/__pycache__
+tp_python_django/analyse_sante/__pycache__
+tp_python_django/data
